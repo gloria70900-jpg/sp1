@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Oculus WebXR Dichoptic Alternating Theater</title>
+  <style>
+    html, body {
+      margin: 0; padding: 0; background: #000; color: #eee;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden; height: 100%; touch-action: none;
+    }
+    #uiToggleBtn {
+      position: fixed; top: 14px; right: 14px; z-index: 999;
+      background: rgba(15, 23, 42, 0.88); border: 1px solid #38bdf8;
+      color: #7dd3fc; font-weight: 700; font-size: 11px;
+      padding: 8px 14px; border-radius: 20px; cursor: pointer;
+      backdrop-filter: blur(8px);
+    }
+    #ui {
+      position: fixed; top: 14px; left: 14px; z-index: 900;
+      background: rgba(10, 15, 24, 0.94); backdrop-filter: blur(12px);
+      border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 12px;
+      padding: 14px; width: 380px; max-height: 90vh; overflow-y: auto;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.8); line-height: 1.3;
+    }
+    #ui.hidden { display: none; }
+    h1 { font-size: 13px; margin: 0 0 8px; color: #38bdf8; }
+    h2 { font-size: 11px; margin: 10px 0 4px; color: #86efac; border-bottom: 1px solid #1e293b; padding-bottom: 2px; }
+    .row { display: flex; align-items: center; justify-content: space-between; margin: 4px 0; font-size: 11px; }
+    .row label { flex: 1; color: #cbd5e1; }
+    .row input[type="range"] { flex: 1.2; accent-color: #38bdf8; }
+    .btn-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin: 4px 0; }
+    .btn-grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; margin: 4px 0; }
+    button {
+      background: #1e293b; color: #94a3b8; border: 1px solid #334155;
+      border-radius: 5px; padding: 6px 2px; font-size: 10px; font-weight: 600; cursor: pointer;
+    }
+    button.active { background: #0284c7; color: #fff; border-color: #38bdf8; }
+    #videoInput { display: none; }
+    .file-btn {
+      width: 100%; padding: 8px; background: #047857; color: #fff;
+      border: 1px solid #10b981; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer;
+    }
+    .status-box {
+      background: #0f172a; border: 1px solid #1e293b; border-radius: 6px;
+      padding: 6px 8px; font-size: 10.5px; color: #38bdf8; font-weight: bold; margin-top: 8px; text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+<button id="uiToggleBtn">👁️ UI 닫기 (오큘러스 B 버튼)</button>
+
+<div id="ui">
+  <h1>🥽 오큘러스 양안 교대 플리커 극장</h1>
+
+  <h2>1. 미디어 플레이어 로더</h2>
+  <button class="file-btn" id="pickVideoBtn">📂 퀘스트 동영상 파일 열기</button>
+  <input type="file" id="videoInput" accept="video/*" />
+  <div class="row" style="margin-top:6px;">
+    <button id="playPauseBtn" style="flex:1; margin-right:4px;">▶ 재생 / 일시정지</button>
+    <button id="pauseFlickerBtn" style="flex:1;">⏸️ 플리커만 중지</button>
+  </div>
+
+  <h2>2. 2D 스크린 크기 및 거리 (오큘러스 평면)</h2>
+  <div class="row">
+    <label>스크린 폭 (너비: <span id="lblWidth">3.2</span>m)</label>
+    <input id="screenW" type="range" min="1.0" max="6.0" step="0.1" value="3.2" />
+  </div>
+  <div class="row">
+    <label>스크린 거리 (깊이: <span id="lblDist">2.5</span>m)</label>
+    <input id="screenD" type="range" min="1.0" max="5.0" step="0.1" value="2.5" />
+  </div>
+
+  <h2>3. 좌/우안 교대 주기 (<span id="lblAlt">좌 5회 ↔ 우 5회</span>)</h2>
+  <div class="btn-grid" id="altGrid">
+    <button data-alt="2">2회</button>
+    <button data-alt="3">3회</button>
+    <button data-alt="4">4회</button>
+    <button data-alt="5" class="active">5회(기본)</button>
+    <button data-alt="6">6회</button>
+  </div>
+
+  <h2>4. 자극 / 휴식 시간 (초)</h2>
+  <div class="row">
+    <label>자극 지속 (ON: <span id="lblOn">2.0</span>초)</label>
+    <input id="sliderOn" type="range" min="0.5" max="6.0" step="0.1" value="2.0" />
+  </div>
+  <div class="row">
+    <label>휴식 대기 (OFF: <span id="lblOff">3.0</span>초)</label>
+    <input id="sliderOff" type="range" min="0.5" max="6.0" step="0.1" value="3.0" />
+  </div>
+
+  <h2>5. 플리커 영역 비율</h2>
+  <div class="btn-grid" id="densityGrid">
+    <button data-val="0.02">0.02%</button>
+    <button data-val="0.04">0.04%</button>
+    <button data-val="0.06" class="active">0.06%</button>
+    <button data-val="0.08">0.08%</button>
+    <button data-val="0.10">0.10%</button>
+  </div>
+
+  <h2>6. 사각형 크기 배율</h2>
+  <div class="btn-grid" id="sizeGrid" style="grid-template-columns: repeat(6, 1fr);">
+    <button data-sz="0.0" class="active">기본</button>
+    <button data-sz="0.1">+0.1%</button>
+    <button data-sz="0.2">+0.2%</button>
+    <button data-sz="0.3">+0.3%</button>
+    <button data-sz="0.5">+0.5%</button>
+    <button data-sz="1.0">+1.0%</button>
+  </div>
+
+  <h2>7. 위치 순환 코스</h2>
+  <div class="btn-grid" id="hopGrid" style="grid-template-columns: repeat(6, 1fr);">
+    <button data-hop="2">2개</button>
+    <button data-hop="3" class="active">3개</button>
+    <button data-hop="4">4개</button>
+    <button data-hop="5">5개</button>
+    <button data-hop="6">6개</button>
+    <button data-hop="rand" style="color:#38bdf8;">랜덤(5쿨)</button>
+  </div>
+
+  <h2>8. 컬러 테마 (10개 세트 + 3회 랜덤)</h2>
+  <button id="colorRandBtn" style="width:100%; margin-bottom:4px; color:#38bdf8;">🎲 세트 자동 랜덤 (3회 교대)</button>
+  <div class="btn-grid-2" id="colorGrid"></div>
+
+  <div class="status-box" id="statusLabel">오큘러스 VR 시작 버튼을 눌러주세요</div>
+</div>
+
+<script type="module">
+  import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js';
+  import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/webxr/VRButton.js';
+
+  // 1. WebGL & Three.js 씬 초기화
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.xr.enabled = true;
+  document.body.appendChild(renderer.domElement);
+  document.body.appendChild(VRButton.createButton(renderer));
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x05080f);
+
+  const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 100);
+  camera.position.set(0, 1.6, 0);
+
+  // 2. 10가지 컬러 테마 정의
+  const COLOR_SETS = {
+    1:  { a: [0.24, 0.82, 0.43], b: [0.90, 0.31, 0.63], name: "1. 연두/핑크" },
+    2:  { a: [0.92, 0.39, 0.18], b: [0.86, 0.71, 0.20], name: "2. 주황/은행" },
+    3:  { a: [0.18, 0.76, 0.86], b: [0.94, 0.43, 0.39], name: "3. 시안/코랄" },
+    4:  { a: [0.67, 0.51, 0.92], b: [0.88, 0.75, 0.24], name: "4. 라벤더/골드" },
+    5:  { a: [0.27, 0.84, 0.69], b: [0.96, 0.55, 0.47], name: "5. 민트/복숭아" },
+    6:  { a: [0.29, 0.65, 0.94], b: [0.92, 0.59, 0.16], name: "6. 하늘/앰버" },
+    7:  { a: [0.16, 0.75, 0.51], b: [0.84, 0.27, 0.71], name: "7. 에메랄드/마젠타" },
+    8:  { a: [0.20, 0.71, 0.75], b: [0.94, 0.63, 0.43], name: "8. 청록/살구" },
+    9:  { a: [0.55, 0.76, 0.27], b: [0.63, 0.39, 0.88], name: "9. 올리브/바이올렛" },
+    10: { a: [0.22, 0.57, 0.90], b: [0.96, 0.49, 0.18], name: "10. 세룰리안/탠저린" }
+  };
+
+  // 3. 파라미터 상태
+  let state = {
+    screenWidth: 3.2,
+    screenDist: 2.5,
+    altReps: 5,            // 좌 5회 <-> 우 5회
+    onSec: 2.0,
+    offSec: 3.0,
+    density: 0.06,
+    sizeScale: 0.0,
+    hopMode: '3',          // '2'~'6' 또는 'rand'
+    colorSet: 1,
+    colorRandom: false,
+    colorStreak: 0,
+    isPaused: false,
+    eyeSide: 'left',       // 현재 자극 눈 ('left' 또는 'right')
+    streakCount: 0,        // 해당 눈 연속 실행 횟수
+    cycleIdx: 0,
+    recentPositions: []
+  };
+
+  // 4. 비디오 엘리먼트 & 텍스처
+  const video = document.createElement('video');
+  video.loop = true; video.playsInline = true; video.crossOrigin = 'anonymous';
+  const defaultCanvas = document.createElement('canvas');
+  defaultCanvas.width = 1280; defaultCanvas.height = 720;
+  const dCtx = defaultCanvas.getContext('2d');
+  dCtx.fillStyle = '#080c14'; dCtx.fillRect(0,0,1280,720);
+  dCtx.fillStyle = '#38bdf8'; dCtx.font = 'bold 36px sans-serif';
+  dCtx.textAlign = 'center'; dCtx.fillText('오큘러스 영상 파일을 선택해 주세요', 640, 360);
+  const defaultTex = new THREE.CanvasTexture(defaultCanvas);
+
+  let videoTex = defaultTex;
+
+  // 5. 스크린 셰이더 (좌/우안 독립 렌더링 Layer 1, Layer 2)
+  const screenVertexShader = `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `;
+
+  const screenFragmentShader = `
+    uniform sampler2D uMap;
+    uniform float uTime;
+    uniform float uIsActive;
+    uniform float uIsEyeTarget;
+    uniform vec3 uColA;
+    uniform vec3 uColB;
+    uniform vec2 uGrid;
+    uniform float uThreshold;
+    uniform float uFreq;
+    uniform float uSeed;
+    varying vec2 vUv;
+
+    float hash(vec2 p, float s) {
+      return fract(sin(dot(p, vec2(127.1, 311.7)) + s * 43.13) * 43758.5453);
+    }
+
+    void main() {
+      vec4 base = texture2D(uMap, vUv);
+      if (uIsActive > 0.5 && uIsEyeTarget > 0.5) {
+        vec2 cell = floor(vUv * uGrid);
+        float r = hash(cell, uSeed);
+        if (r < uThreshold) {
+          float sp = mod(cell.x + cell.y, 2.0) > 0.5 ? 1.0 : -1.0;
+          float tm = sin(uTime * uFreq * 6.2831853);
+          float sig = sp * tm;
+          float inte = abs(sig);
+          if (inte > 0.12) {
+            vec3 c = (sig > 0.0) ? uColA : uColB;
+            base.rgb = mix(base.rgb, c, inte * 0.85);
+          }
+        }
+      }
+      gl_FragColor = base;
+    }
+  `;
+
+  function createScreenMat() {
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        uMap: { value: videoTex },
+        uTime: { value: 0.0 },
+        uIsActive: { value: 0.0 },
+        uIsEyeTarget: { value: 0.0 },
+        uColA: { value: new THREE.Color(...COLOR_SETS[1].a) },
+        uColB: { value: new THREE.Color(...COLOR_SETS[1].b) },
+        uGrid: { value: new THREE.Vector2(320.0, 180.0) },
+        uThreshold: { value: 0.0006 },
+        uFreq: { value: 2.0 },
+        uSeed: { value: 1.0 }
+      },
+      vertexShader: screenVertexShader,
+      fragmentShader: screenFragmentShader,
+      side: THREE.FrontSide
+    });
+  }
+
+  const leftMat = createScreenMat();
+  const rightMat = createScreenMat();
+
+  const geom = new THREE.PlaneGeometry(1, 1);
+  const leftMesh = new THREE.Mesh(geom, leftMat);
+  leftMesh.layers.set(1); // WebXR 좌안
+  scene.add(leftMesh);
+
+  const rightMesh = new THREE.Mesh(geom, rightMat);
+  rightMesh.layers.set(2); // WebXR 우안
+  scene.add(rightMesh);
+
+  function updateScreenLayout() {
+    const w = state.screenWidth;
+    const h = w * (9 / 16);
+    const z = -state.screenDist;
+    leftMesh.scale.set(w, h, 1);
+    leftMesh.position.set(0, 1.6, z);
+    rightMesh.scale.set(w, h, 1);
+    rightMesh.position.set(0, 1.6, z);
+  }
+  updateScreenLayout();
+
+  // 6. UI 빌드 & 이벤트 바인딩
+  const $ = (sel) => document.querySelector(sel);
+  const ui = $('#ui');
+  const uiToggleBtn = $('#uiToggleBtn');
+
+  function toggleUI() {
+    ui.classList.toggle('hidden');
+    uiToggleBtn.textContent = ui.classList.contains('hidden') ? '👁️ UI 열기 (B 버튼)' : '👁️ UI 닫기 (B 버튼)';
+  }
+  uiToggleBtn.addEventListener('click', toggleUI);
+
+  // 동영상 로더
+  $('#pickVideoBtn').addEventListener('click', () => $('#videoInput').click());
+  $('#videoInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      video.src = URL.createObjectURL(file);
+      video.play().catch(()=>{});
+      videoTex = new THREE.VideoTexture(video);
+      leftMat.uniforms.uMap.value = videoTex;
+      rightMat.uniforms.uMap.value = videoTex;
+      $('#pickVideoBtn').textContent = `🎬 ${file.name.slice(0, 18)}...`;
+    }
+  });
+
+  $('#playPauseBtn').addEventListener('click', () => {
+    if (video.paused) { video.play(); $('#playPauseBtn').textContent = '⏸️ 영상 일시정지'; }
+    else { video.pause(); $('#playPauseBtn').textContent = '▶️ 영상 재생'; }
+  });
+
+  $('#pauseFlickerBtn').addEventListener('click', () => {
+    state.isPaused = !state.isPaused;
+    $('#pauseFlickerBtn').textContent = state.isPaused ? '▶️ 플리커 재개' : '⏸️ 플리커만 중지';
+  });
+
+  // 스크린 크기 / 거리
+  $('#screenW').addEventListener('input', (e) => {
+    state.screenWidth = parseFloat(e.target.value);
+    $('#lblWidth').textContent = state.screenWidth.toFixed(1);
+    updateScreenLayout();
+  });
+  $('#screenD').addEventListener('input', (e) => {
+    state.screenDist = parseFloat(e.target.value);
+    $('#lblDist').textContent = state.screenDist.toFixed(1);
+    updateScreenLayout();
+  });
+
+  // 좌/우안 교대 횟수
+  document.querySelectorAll('#altGrid button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#altGrid button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.altReps = parseInt(btn.dataset.alt, 10);
+      state.streakCount = 0;
+      $('#lblAlt').textContent = `좌 ${state.altReps}회 ↔ 우 ${state.altReps}회`;
+    });
+  });
+
+  // 자극 / 휴식 시간
+  $('#sliderOn').addEventListener('input', (e) => {
+    state.onSec = parseFloat(e.target.value);
+    $('#lblOn').textContent = state.onSec.toFixed(1);
+  });
+  $('#sliderOff').addEventListener('input', (e) => {
+    state.offSec = parseFloat(e.target.value);
+    $('#lblOff').textContent = state.offSec.toFixed(1);
+  });
+
+  // 영역 비율
+  document.querySelectorAll('#densityGrid button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#densityGrid button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.density = parseFloat(btn.dataset.val);
+      updateDensityAndSize();
+    });
+  });
+
+  // 사각형 크기 배율
+  document.querySelectorAll('#sizeGrid button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#sizeGrid button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.sizeScale = parseFloat(btn.dataset.sz);
+      updateDensityAndSize();
+    });
+  });
+
+  function updateDensityAndSize() {
+    const baseGridW = 320.0 / (1.0 + state.sizeScale / 100.0);
+    const baseGridH = 180.0 / (1.0 + state.sizeScale / 100.0);
+    leftMat.uniforms.uGrid.value.set(baseGridW, baseGridH);
+    rightMat.uniforms.uGrid.value.set(baseGridW, baseGridH);
+    const thresh = state.density / 100.0;
+    leftMat.uniforms.uThreshold.value = thresh;
+    rightMat.uniforms.uThreshold.value = thresh;
+  }
+
+  // 위치 순환 코스
+  document.querySelectorAll('#hopGrid button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#hopGrid button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.hopMode = btn.dataset.hop;
+      state.recentPositions = [];
+    });
+  });
+
+  // 컬러 그리드 생성
+  const colorGrid = $('#colorGrid');
+  for (let idx = 1; idx <= 10; idx++) {
+    const btn = document.createElement('button');
+    btn.textContent = COLOR_SETS[idx].name;
+    if (idx === 1) btn.classList.add('active');
+    btn.addEventListener('click', () => {
+      state.colorRandom = false;
+      $('#colorRandBtn').classList.remove('active');
+      document.querySelectorAll('#colorGrid button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      applyColorSet(idx);
+    });
+    colorGrid.appendChild(btn);
+  }
+
+  $('#colorRandBtn').addEventListener('click', () => {
+    state.colorRandom = !state.colorRandom;
+    $('#colorRandBtn').classList.toggle('active', state.colorRandom);
+    state.colorStreak = 0;
+  });
+
+  function applyColorSet(setIdx) {
+    state.colorSet = setIdx;
+    const s = COLOR_SETS[setIdx];
+    leftMat.uniforms.uColA.value.setRGB(...s.a);
+    leftMat.uniforms.uColB.value.setRGB(...s.b);
+    rightMat.uniforms.uColA.value.setRGB(...s.a);
+    rightMat.uniforms.uColB.value.setRGB(...s.b);
+  }
+
+  // 7. 오큘러스 컨트롤러 입력 처리 (B 버튼으로 UI 토글)
+  let lastBState = false;
+  function handleXRControllers() {
+    const session = renderer.xr.getSession();
+    if (!session) return;
+    for (const src of session.inputSources) {
+      if (src.gamepad && src.handedness === 'right') {
+        const bBtn = src.gamepad.buttons[5] || src.gamepad.buttons[1]; // Oculus Touch B Button
+        if (bBtn && bBtn.pressed && !lastBState) {
+          toggleUI();
+        }
+        lastBState = bBtn ? bBtn.pressed : false;
+      }
+    }
+  }
+
+  // 8. 메인 애니메이션 & 교대 스케줄러 루프
+  const clock = new THREE.Clock();
+  let lastCycleNum = -1;
+  let colorCooldown = [];
+
+  renderer.setAnimationLoop(() => {
+    const delta = clock.getDelta();
+    const elapsed = clock.getElapsedTime();
+
+    handleXRControllers();
+
+    leftMat.uniforms.uTime.value = elapsed;
+    rightMat.uniforms.uTime.value = elapsed;
+
+    if (state.isPaused) {
+      leftMat.uniforms.uIsActive.value = 0.0;
+      rightMat.uniforms.uIsActive.value = 0.0;
+      $('#statusLabel').textContent = '⏸️ 플리커 일시정지 상태';
+      renderer.render(scene, camera);
+      return;
+    }
+
+    const cycleDuration = state.onSec + state.offSec;
+    const cycleNum = Math.floor(elapsed / cycleDuration);
+    const timeInCycle = elapsed % cycleDuration;
+    const isStimActive = (timeInCycle < state.onSec);
+
+    // 새 주기 진입 시: 양안 교대 & 위치/컬러 업데이트
+    if (cycleNum !== lastCycleNum) {
+      lastCycleNum = cycleNum;
+      state.streakCount++;
+
+      // 지정된 횟수(예: 5회) 후 반대편 눈으로 교대
+      if (state.streakCount > state.altReps) {
+        state.eyeSide = (state.eyeSide === 'left') ? 'right' : 'left';
+        state.streakCount = 1;
+      }
+
+      // 위치 시드 계산 (루프 또는 5회 쿨다운 랜덤)
+      if (state.hopMode === 'rand') {
+        let candidate;
+        do {
+          candidate = Math.floor(Math.random() * 20) + 1;
+        } while (state.recentPositions.includes(candidate));
+        state.recentPositions.push(candidate);
+        if (state.recentPositions.length > 5) state.recentPositions.shift();
+        leftMat.uniforms.uSeed.value = candidate;
+        rightMat.uniforms.uSeed.value = candidate;
+      } else {
+        const n = parseInt(state.hopMode, 10);
+        const seedVal = (cycleNum % n) + 1.0;
+        leftMat.uniforms.uSeed.value = seedVal;
+        rightMat.uniforms.uSeed.value = seedVal;
+      }
+
+      // 컬러 3회 자동 랜덤 교대
+      if (state.colorRandom) {
+        state.colorStreak++;
+        if (state.colorStreak > 3) {
+          state.colorStreak = 1;
+          const available = [1,2,3,4,5,6,7,8,9,10].filter(c => !colorCooldown.includes(c));
+          const nextCol = available[Math.floor(Math.random() * available.length)];
+          colorCooldown.push(nextCol);
+          if (colorCooldown.length > 3) colorCooldown.shift();
+          applyColorSet(nextCol);
+          document.querySelectorAll('#colorGrid button').forEach((b, i) => {
+            b.classList.toggle('active', i + 1 === nextCol);
+          });
+        }
+      }
+    }
+
+    // 셰이더 Uniform 주입 (지정된 눈만 플리커 활성화)
+    leftMat.uniforms.uIsActive.value = isStimActive ? 1.0 : 0.0;
+    rightMat.uniforms.uIsActive.value = isStimActive ? 1.0 : 0.0;
+    leftMat.uniforms.uIsEyeTarget.value = (state.eyeSide === 'left') ? 1.0 : 0.0;
+    rightMat.uniforms.uIsEyeTarget.value = (state.eyeSide === 'right') ? 1.0 : 0.0;
+
+    // UI 상태 표시
+    const eyeKorean = (state.eyeSide === 'left') ? '좌안(Left)' : '우안(Right)';
+    const rem = isStimActive ? (state.onSec - timeInCycle) : (cycleDuration - timeInCycle);
+    $('#statusLabel').textContent = `${isStimActive ? '●' : '○'} [${eyeKorean} 자극 중 ${state.streakCount}/${state.altReps}회] 잔여: ${rem.toFixed(1)}초`;
+
+    renderer.render(scene, camera);
+  });
+</script>
+</body>
+</html>
